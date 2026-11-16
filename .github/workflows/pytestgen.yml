@@ -37,7 +37,7 @@ jobs:
           done
           docker logs --tail 20 pytestgen-llm
           exit 1
-      - uses: ark2016/mipt-9-pytestGen@f955919939fadcc9c7c738327cf867c2d43cc83c
+      - uses: ark2016/mipt-9-pytestGen@v0.1.0
         with:
           llm-base-url: http://127.0.0.1:8080/v1
           llm-model: qwen-coder
