@@ -1,0 +1,46 @@
+name: Generate pytest tests
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled]
+
+jobs:
+  suggest-tests:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'gen-tests') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'gen-tests')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Start a CPU model (no API key)
+        shell: bash
+        env:
+          MODEL_URL: https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/f86cb2c1fa58255f8052cc32aeede1b7482d4361/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/pytestgen-model"
+          curl -fsSL --retry 3 "$MODEL_URL" -o "$RUNNER_TEMP/pytestgen-model/model.gguf"
+          docker run --detach --name pytestgen-llm --publish 127.0.0.1:8080:8080 \
+            --volume "$RUNNER_TEMP/pytestgen-model:/models:ro" \
+            ghcr.io/ggml-org/llama.cpp:server-b11459 \
+            -m /models/model.gguf --alias qwen-coder --host 0.0.0.0 --port 8080 -c 8192 -np 1 --jinja
+          for attempt in {1..90}; do
+            if curl -fsS http://127.0.0.1:8080/health >/dev/null 2>&1; then exit 0; fi
+            sleep 2
+          done
+          docker logs --tail 20 pytestgen-llm
+          exit 1
+      - uses: ark2016/mipt-9-pytestGen@f955919939fadcc9c7c738327cf867c2d43cc83c
+        with:
+          llm-base-url: http://127.0.0.1:8080/v1
+          llm-model: qwen-coder
+          paths: src/**/*.py
+          max-files: "1"
+          fail-on-error: "true"
